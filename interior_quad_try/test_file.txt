@@ -1,0 +1,26 @@
+NAME          EXAMPLE
+ROWS
+ N  COST
+ E  R1
+ E  R2
+ E  R3
+COLUMNS
+    s01       R1        -1.000000E+000
+    s02       R2        -1.000000E+000
+    s03       R3        -1.000000E+000
+RHS
+    rhs1      R1        +1.000000E+002
+    rhs1      R2        +1.000000E+002
+    rhs1      R3        +3.000000E+003
+BOUNDS
+ UP BD        s01       +1.000000E+002
+ LO BD        s01       -1.000000E+002
+ UP BD        s02       +1.000000E+002
+ LO BD        s02       -1.000000E+002
+ UP BD        s03       +1.000000E+002
+ LO BD        s03       -1.000000E+002
+QUADS
+    s01       s01       +1.000000E+000
+    s02       s02       +1.000000E+000
+    s03       s03       +1.000000E+000
+ENDATA

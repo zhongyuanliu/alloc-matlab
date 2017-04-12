@@ -1,0 +1,8 @@
+x=zeros(11,1);
+y=zeros(size(Aeq),1);
+z=x;
+s=x;
+G=H;
+g=f;
+
+[ x_stop, y_stop, z_stop, s_stop, k ] = pcQP_gen (x, y, z, s,G, g ,A, b ,Aeq, beq)

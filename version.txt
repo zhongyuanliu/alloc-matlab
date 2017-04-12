@@ -1,0 +1,102 @@
+
+%  update:     
+%  1.01 add check_phi in pre_qp.m to make sure initial phi meets
+%  constraint. |29-11-2016 by Liu
+%  1.02 correct mark8 and add if status < 0 then break to avoid risk of
+%  infinite loop. |29-11-2016 by Liu
+%  1.04 change alloc_out(i).phi = thruster_data(i).phi;%output is equal to input for tunnel thruster
+%  1.05 improve function check_angle(phi_min,phi_,phi,phiPlus,phi_max) and angleMaxMin(angle_start,angle_end,phi,phi1,phi2)
+%  1.06 guarantee initial x feasible, add mark8(i) = 2 to avoid infinite
+%  loop, add count_run > 50 then break |03-01-2017 by Liu
+%  4.09 if any thruster is enabled or disabled, init_solver = true;(in C code) |4-4-2017 by Liu
+%  4.10 if previous phi of azi is on fbzone border, it should remain the same in the next loop if phi in the next loop is inside the fbzone.|4-4-2017 by Liu
+
+function [solution,alloc_out,status]=qpsolver(thruster_data,T_r,N_enabled_thruster,rudder_table0,no_azi_angle_constr,method)
+% method == 1 qpkwik
+% method == 2 sef made primal active set
+
+% solves a quadratic program to determine an optimal solution, x.
+% It minimizes the quadratic objective function, J = 0.5*x'*H*x + f'*x,
+% subject to linear inequality constraints, A*x >= b, and linear equality
+% constraints, Aeq*x = beq, where x is a column vector of length n.
+%
+% H is the n-by-n hessian matrix, which must be symmetric and positive
+% definite.  L is its lower-triangular Cholesky decomposition and Linv is
+% the inverse of L.  Consequently, Linv can be computed from H as follows
+% in MATLAB:   
+%   L = chol(H, 'lower')
+%   Linv = L\eye(size(H,1))
+% Note that H = L*L'
+%
+% Input arguments (all are mandatory):
+%    Linv:  n-by-n (n>0) matrix representing the inverse of L.   
+%       f:  column vector of length n (n>0). 
+%       A:  m-by-n matrix of linear inequality constraint coefficients.  If
+%           your problem has no inequality constraints, use [].
+%       b:  column vector of length m, the right-hand side of A*x >= b.  If
+%           your problem has no inequality constraints, use "zeros(0,1)".  
+%     Aeq:  q-by-n matrix of linear equality constraint coefficients,  
+%           q <= n.  If your problem has no equality constraints, use [].
+%           NOTE:  equality constraints must be linearly independent with
+%           rank(Aeq) = q.
+%     beq:  column vector of length q, the right-hand side of Aeq*x = beq.
+%           If your problem has no equality constraints, use "zeros(0,1)".  
+%     iA0:  logical vector of length m.  If your problem has no inequality
+%           constraints, use "false(0,1)".  For a "cold start": use
+%           false(m,1).  For a "warm start": if iA0(i) == true, the
+%           algorithm begins with A(i,:)*x = b(i), i.e., with the ith
+%           inequality active.    
+%           Tips:
+%           (1) Normally, you should use the optional output argument iA
+%           from a previous solution as the input iA0 in the next
+%           calculation.  
+%           (2) if iA0(i) and iA0(j) are true, rows i and j of A should be
+%           linearly independent.  Otherwise, the solution may fail (status
+%           = -2). This should not happen if you use iA from a previous
+%           solution as recommended above.
+% options:  Structure with following fields used by the QP solver.  
+%
+%                  DataType: string, either 'double' or 'single'.  All the
+%                            real input arguments to the "mpcqpsolver"
+%                            command must match this data type and it is
+%                            used in both simulation and code generation.
+%                            Default value is 'double'. 
+%                   MaxIter: scalar, maximum number of iterations allowed
+%                            when computing QP solution.  Default value is
+%                            200. 
+%            FeasibilityTol: scalar, tolerance used to verify that
+%                            inequality constraints are satisfied at the
+%                            optimal solution.  Increasing this causes
+%                            MPCQPSOLVER to allow larger constraint
+%                            violations. Default value is 1.0e-6. 
+%
+%           Use the MPCQPSOLVEROPTIONS command to create such a structure
+%           with default values.
+%
+% Output arguments:
+%       x: column vector of length n, representing the optimal solution.
+%          MPCQPSOLVER will return x in all cases, but it is likely to be
+%          sub-optimal and/or infeasible unless status > 0.
+%  status: scalar, indicating the validity of the returned x as follows:
+%            >  0:  x is optimal, representing the number of iterations
+%                   used in optimization.  
+%           ==  0:  x was obtained when maximum number of iterations is
+%                   reached.  It may be sub-optimal and/or violate A*x >=b.
+%           == -1:  The problem appears to be infeasible.  In other words,
+%                   A*x >= b cannot be satisfied.
+%           == -2:  An unrecoverable numerical error occurred (e.g., see
+%                   description of iA0).
+%      iA: logical vector of length m, indicating the inequalities that
+%          are active (at equality) at the solution.  In a series of
+%          problems in which A is constant, you can use iA from one
+%          solution as the input iA0 to the next ("warm start").
+%  lambda: structure of Lagrange multipliers with two fields:
+%           ineqlin: column vector of length m, multipliers of the
+%                    inequality constraints.  Must be non-negative at an
+%                    optimal solution. 
+%             eqlin: column vector of length q, multipliers of the equality
+%                    constraints.  No sign restriction.
+
+%  command for code generation:
+%  cfg = coder.config('lib');
+%  codegen -config cfg -c  -args {thruster_data,T_r,N_enabled_thruster,rudder_table,0,1} qpsolver

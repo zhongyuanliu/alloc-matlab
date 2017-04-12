@@ -1,0 +1,128 @@
+<deployment-project plugin="plugin.ezdeploy" plugin-version="1.0">
+  <configuration build-checksum="1374739325" file="C:\Users\Z\Documents\MATLAB\box_export.prj" location="C:\Users\Z\Documents\MATLAB" name="box_export" preferred-package-location="C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\redis" preferred-package-type="package.type.exe" target="target.ezdeploy.standalone" target-name="MATLAB Compiler for Standalone Applications">
+    <param.appname>box_export</param.appname>
+    <param.icon />
+    <param.icons />
+    <param.version>1.0</param.version>
+    <param.authnamewatermark>Z. Liu</param.authnamewatermark>
+    <param.email />
+    <param.company>Praxis Automation Technology</param.company>
+    <param.summary />
+    <param.description />
+    <param.screenshot />
+    <param.guid />
+    <param.installpath.string>\Praxis_Automation_Technology\box_export\</param.installpath.string>
+    <param.installpath.combo>option.installpath.programfiles</param.installpath.combo>
+    <param.logo />
+    <param.install.notes />
+    <param.intermediate>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test</param.intermediate>
+    <param.files.only>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\end user files</param.files.only>
+    <param.output>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\redis</param.output>
+    <param.enable.clean.build>false</param.enable.clean.build>
+    <param.user.defined.mcr.options />
+    <param.embed.ctf>true</param.embed.ctf>
+    <param.server.ctf>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test\.ctf</param.server.ctf>
+    <param.server.readme>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test\readme.txt</param.server.readme>
+    <param.target.type>subtarget.standalone</param.target.type>
+    <param.support.packages />
+    <param.required.mcr.products>
+      <item>35000</item>
+      <item>35001</item>
+    </param.required.mcr.products>
+    <param.web.mcr>false</param.web.mcr>
+    <param.package.mcr>true</param.package.mcr>
+    <param.no.mcr>false</param.no.mcr>
+    <param.web.mcr.name>MyAppInstaller_web</param.web.mcr.name>
+    <param.package.mcr.name>MyAppInstaller_mcr</param.package.mcr.name>
+    <param.no.mcr.name>MyAppInstaller_app</param.no.mcr.name>
+    <param.windows.command.prompt>true</param.windows.command.prompt>
+    <param.create.log>false</param.create.log>
+    <param.log.file />
+    <unset>
+      <param.icon />
+      <param.icons />
+      <param.version />
+      <param.email />
+      <param.summary />
+      <param.description />
+      <param.screenshot />
+      <param.guid />
+      <param.installpath.string />
+      <param.installpath.combo />
+      <param.logo />
+      <param.install.notes />
+      <param.enable.clean.build />
+      <param.user.defined.mcr.options />
+      <param.embed.ctf />
+      <param.server.ctf />
+      <param.server.readme />
+      <param.target.type />
+      <param.support.packages />
+      <param.no.mcr />
+      <param.web.mcr.name />
+      <param.package.mcr.name />
+      <param.no.mcr.name />
+      <param.windows.command.prompt />
+      <param.create.log />
+      <param.log.file />
+    </unset>
+    <fileset.main>
+      <file>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\box_export.m</file>
+    </fileset.main>
+    <fileset.resources>
+      <file>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\box_export.mat</file>
+      <file>C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\multibody_boolean.m</file>
+    </fileset.resources>
+    <fileset.package />
+    <build-deliverables>
+      <file location="C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test" name="box_export.exe" optional="false">C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test\box_export.exe</file>
+      <file location="C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test" name="readme.txt" optional="true">C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test\readme.txt</file>
+      <file location="C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test" name="splash.png" optional="false">C:\Users\Z\OneDrive\DPO\internship\DP\work\5-11-2015\standalone\test\splash.png</file>
+    </build-deliverables>
+    <workflow />
+    <matlab>
+      <root>C:\Program Files\MATLAB\R2014b</root>
+      <toolboxes>
+        <toolbox name="matlabhdlcoder" />
+        <toolbox name="fixedpoint" />
+        <toolbox name="embeddedcoder" />
+        <toolbox name="matlabcoder" />
+      </toolboxes>
+      <toolbox>
+        <matlabhdlcoder>
+          <enabled>true</enabled>
+        </matlabhdlcoder>
+      </toolbox>
+      <toolbox>
+        <fixedpoint>
+          <enabled>true</enabled>
+        </fixedpoint>
+      </toolbox>
+      <toolbox>
+        <embeddedcoder>
+          <enabled>true</enabled>
+        </embeddedcoder>
+      </toolbox>
+      <toolbox>
+        <matlabcoder>
+          <enabled>true</enabled>
+        </matlabcoder>
+      </toolbox>
+    </matlab>
+    <platform>
+      <unix>false</unix>
+      <mac>false</mac>
+      <windows>true</windows>
+      <win2k>false</win2k>
+      <winxp>false</winxp>
+      <vista>false</vista>
+      <linux>false</linux>
+      <solaris>false</solaris>
+      <osver>6.1</osver>
+      <os32>false</os32>
+      <os64>true</os64>
+      <arch>win64</arch>
+      <matlab>true</matlab>
+    </platform>
+  </configuration>
+</deployment-project>

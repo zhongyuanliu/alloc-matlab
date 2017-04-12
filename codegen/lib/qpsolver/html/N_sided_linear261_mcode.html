@@ -1,0 +1,480 @@
+<!-- saved from url=(0014)about:internet -->
+<div class="dead">
+<pre class="code">
+<span class="srcline"><span class="lineno"><a href="86,1" id="srcline1">  1</a></span><span class="line">function [thruster_data,Nvar,Ho,fo,Ao,bo,Aeqo,beqo,x0] = pre_qp(init,thruster_data,T_r,N_enabled_thruster,Ce,NA_fpp,rudder_table,Rangle_T,Rangle_Fangle,no_azi_angle_constr,method)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,2" id="srcline2">  2</a></span><span class="line"><span class="comment">%  1.04 thruster_data(i).phi is replaced by thruster_data(i).phi_min for tunnel thruster</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,3" id="srcline3">  3</a></span><span class="line"><span class="comment">%  1.06 guarantee initial x feasible</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,4" id="srcline4">  4</a></span><span class="line"><span class="comment">%  4.06 u is scaled. c_scale * Tmax^2 == 1 |13-03-2017 by Liu</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,5" id="srcline5">  5</a></span><span class="line"><span class="comment">%% ---------------precalculation------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,6" id="srcline6">  6</a></span><span class="line">persistent A_azi NA_azi A_fpp b_fpp;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,7" id="srcline7">  7</a></span><span class="line">tol = 1e-6;<span class="comment">%!!!avoid numerical problem</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,8" id="srcline8">  8</a></span><span class="line">Ntunnel=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,9" id="srcline9">  9</a></span><span class="line">Nazi=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,10" id="srcline10"> 10</a></span><span class="line">Nfpp=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,11" id="srcline11"> 11</a></span><span class="line">dt = thruster_data(1).dt;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,12" id="srcline12"> 12</a></span><span class="line">c2 = 0.001*0;<span class="comment">%!!!!!!!!!!!!!!!!!!!!!!!!!!</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,13" id="srcline13"> 13</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,14" id="srcline14"> 14</a></span><span class="line">error_linearization = 0.05;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,15" id="srcline15"> 15</a></span><span class="line">if isempty(A_azi) || isempty(NA_azi) || init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,16" id="srcline16"> 16</a></span><span class="line">    [A_azi,NA_azi] = N_sided_linear(error_linearization);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,17" id="srcline17"> 17</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,18" id="srcline18"> 18</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,19" id="srcline19"> 19</a></span><span class="line">if isempty(A_fpp) || isempty(b_fpp) || init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,20" id="srcline20"> 20</a></span><span class="line">    [A_fpp,b_fpp,~] = N_sided_rudder(1e5 * rudder_table(:,2:3));<span class="comment">%%!!what if there is no fpp!!!!!!!!!!</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,21" id="srcline21"> 21</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,22" id="srcline22"> 22</a></span><span class="line"><span class="comment">% NA_azi = 0;%not used at the moment!!!!!!!!!!!!!!!!</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,23" id="srcline23"> 23</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,24" id="srcline24"> 24</a></span><span class="line"><span class="comment">% init = true;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,25" id="srcline25"> 25</a></span><span class="line">x0=zeros(N_enabled_thruster * 2 + 3,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,26" id="srcline26"> 26</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,27" id="srcline27"> 27</a></span><span class="line">for j=1:N_enabled_thruster</span></span>
+<span class="srcline"><span class="lineno"><a href="86,28" id="srcline28"> 28</a></span><span class="line"><span class="comment">%     check if phi meets constraint, if check_phi == 0, phi is not between</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,29" id="srcline29"> 29</a></span><span class="line"><span class="comment">%     max and min, then it should be changed. VERY IMPORTANT</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,30" id="srcline30"> 30</a></span><span class="line"><span class="comment">%     check_phi = check_angle(thruster_data(j).phi_min,thruster_data(j).phi_min, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,31" id="srcline31"> 31</a></span><span class="line"><span class="comment">%         thruster_data(j).phi,thruster_data(j).phi_max,thruster_data(j).phi_max);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,32" id="srcline32"> 32</a></span><span class="line"><span class="comment">%     </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,33" id="srcline33"> 33</a></span><span class="line"><span class="comment">%     if check_phi == 0 % guarantee initial phi feasible</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,34" id="srcline34"> 34</a></span><span class="line"><span class="comment">%         thruster_data(j).phi = ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,35" id="srcline35"> 35</a></span><span class="line"><span class="comment">%             thruster_data(j).phi_min + ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,36" id="srcline36"> 36</a></span><span class="line"><span class="comment">%             angle_dist(thruster_data(j).phi_min, thruster_data(j).phi_max) / 2;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,37" id="srcline37"> 37</a></span><span class="line"><span class="comment">% </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,38" id="srcline38"> 38</a></span><span class="line"><span class="comment">%         thruster_data(j).phi = Pi_toPi(thruster_data(j).phi);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,39" id="srcline39"> 39</a></span><span class="line"><span class="comment">%     end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,40" id="srcline40"> 40</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,41" id="srcline41"> 41</a></span><span class="line">    if thruster_data(j).type == 4<span class="comment">%added, avoid tunnel infeasible angle input, v1.07</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,42" id="srcline42"> 42</a></span><span class="line">        if abs(thruster_data(j).phi_min - thruster_data(j).phi) &gt; tol</span></span>
+<span class="srcline"><span class="lineno"><a href="86,43" id="srcline43"> 43</a></span><span class="line">            thruster_data(j).phi = thruster_data(j).phi_min;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,44" id="srcline44"> 44</a></span><span class="line">        end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,45" id="srcline45"> 45</a></span><span class="line">        </span></span>
+<span class="srcline"><span class="lineno"><a href="86,46" id="srcline46"> 46</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,47" id="srcline47"> 47</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,48" id="srcline48"> 48</a></span><span class="line">    if abs(thruster_data(j).Tmax - thruster_data(j).Tmin) &lt; tol<span class="comment">%avoid Tmax == Tmin</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,49" id="srcline49"> 49</a></span><span class="line">        thruster_data(j).Tmax = 1e7;<span class="comment">%big enough</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,50" id="srcline50"> 50</a></span><span class="line">        if thruster_data(j).type == 4</span></span>
+<span class="srcline"><span class="lineno"><a href="86,51" id="srcline51"> 51</a></span><span class="line">            thruster_data(j).Tmin = -1e7;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,52" id="srcline52"> 52</a></span><span class="line">        else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,53" id="srcline53"> 53</a></span><span class="line">            thruster_data(j).Tmin = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,54" id="srcline54"> 54</a></span><span class="line">        end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,55" id="srcline55"> 55</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,56" id="srcline56"> 56</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,57" id="srcline57"> 57</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,58" id="srcline58"> 58</a></span><span class="line">    if thruster_data(j).T &gt; thruster_data(j).Tmax ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,59" id="srcline59"> 59</a></span><span class="line">            || thruster_data(j).T &lt; thruster_data(j).Tmin<span class="comment">% guarantee initial T feasible </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,60" id="srcline60"> 60</a></span><span class="line">        if thruster_data(j).type == 4</span></span>
+<span class="srcline"><span class="lineno"><a href="86,61" id="srcline61"> 61</a></span><span class="line">            thruster_data(j).T = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,62" id="srcline62"> 62</a></span><span class="line">        else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,63" id="srcline63"> 63</a></span><span class="line">            thruster_data(j).T = thruster_data(j).Tmin;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,64" id="srcline64"> 64</a></span><span class="line">        end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,65" id="srcline65"> 65</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,66" id="srcline66"> 66</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,67" id="srcline67"> 67</a></span><span class="line">    if thruster_data(j).T_reserve &gt; thruster_data(j).Tmax ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,68" id="srcline68"> 68</a></span><span class="line">            || thruster_data(j).T_reserve &lt; thruster_data(j).Tmin<span class="comment">% guarantee initial T feasible </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,69" id="srcline69"> 69</a></span><span class="line">        if thruster_data(j).type == 4</span></span>
+<span class="srcline"><span class="lineno"><a href="86,70" id="srcline70"> 70</a></span><span class="line">            thruster_data(j).T_reserve = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,71" id="srcline71"> 71</a></span><span class="line">        else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,72" id="srcline72"> 72</a></span><span class="line">            thruster_data(j).T_reserve = thruster_data(j).Tmin;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,73" id="srcline73"> 73</a></span><span class="line">        end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,74" id="srcline74"> 74</a></span><span class="line">    end    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,75" id="srcline75"> 75</a></span><span class="line"><span class="comment">% % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %     </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,76" id="srcline76"> 76</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,77" id="srcline77"> 77</a></span><span class="line">    x0(2 * j - 1)=thruster_data(j).T*cos(thruster_data(j).phi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,78" id="srcline78"> 78</a></span><span class="line">    x0(2 * j)=thruster_data(j).T*sin(thruster_data(j).phi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,79" id="srcline79"> 79</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,80" id="srcline80"> 80</a></span><span class="line">    switch thruster_data(j).type</span></span>
+<span class="srcline"><span class="lineno"><a href="86,81" id="srcline81"> 81</a></span><span class="line">        case 4<span class="comment">%tunnel</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,82" id="srcline82"> 82</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,83" id="srcline83"> 83</a></span><span class="line">            thruster_data(j).Tplus = min(thruster_data(j).T + ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,84" id="srcline84"> 84</a></span><span class="line">                dt * thruster_data(j).dTmax, thruster_data(j).Tmax);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,85" id="srcline85"> 85</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,86" id="srcline86"> 86</a></span><span class="line">            thruster_data(j).T_ = max(thruster_data(j).T - ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,87" id="srcline87"> 87</a></span><span class="line">                dt * thruster_data(j).dTmax, thruster_data(j).Tmin);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,88" id="srcline88"> 88</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,89" id="srcline89"> 89</a></span><span class="line">            Ntunnel = Ntunnel + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,90" id="srcline90"> 90</a></span><span class="line">        case 3<span class="comment">%azi</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,91" id="srcline91"> 91</a></span><span class="line"><span class="comment">%             thruster_data(j).Tplus = min(thruster_data(j).T + ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,92" id="srcline92"> 92</a></span><span class="line"><span class="comment">%                 dt * thruster_data(j).dTmax, thruster_data(j).Tmax);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,93" id="srcline93"> 93</a></span><span class="line"><span class="comment">%             </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,94" id="srcline94"> 94</a></span><span class="line"><span class="comment">%             thruster_data(j).T_ = max(thruster_data(j).T - ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,95" id="srcline95"> 95</a></span><span class="line"><span class="comment">%                 dt * thruster_data(j).dTmax, thruster_data(j).Tmin);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,96" id="srcline96"> 96</a></span><span class="line"><span class="comment">%             -----------------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,97" id="srcline97"> 97</a></span><span class="line"><span class="comment">%             if thruster_data(j).constr == 2 </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,98" id="srcline98"> 98</a></span><span class="line"><span class="comment">%                 thruster_data(j).phi_ = thruster_data(j).phi;%!!!!!!add -tol or not</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,99" id="srcline99"> 99</a></span><span class="line"><span class="comment">%                 thruster_data(j).phiPlus = thruster_data(j).phi;%!!!!!add +tol or not</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,100" id="srcline100">100</a></span><span class="line"><span class="comment">%             elseif thruster_data(j).constr == 3 </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,101" id="srcline101">101</a></span><span class="line"><span class="comment">%                 </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,102" id="srcline102">102</a></span><span class="line"><span class="comment">%             end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,103" id="srcline103">103</a></span><span class="line"><span class="comment">%             thruster_data(j).phi_ = thruster_data(j).phi - dt * thruster_data(j).dphi_max;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,104" id="srcline104">104</a></span><span class="line"><span class="comment">%                 thruster_data(j).phiPlus = thruster_data(j).phi + dt * thruster_data(j).dphi_max;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,105" id="srcline105">105</a></span><span class="line"><span class="comment">%             -----------------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,106" id="srcline106">106</a></span><span class="line">            <span class="comment">%             thruster_data(j).phiPlus = min(thruster_data(j).phi + ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,107" id="srcline107">107</a></span><span class="line">            <span class="comment">%                 dt * thruster_data(j).dphi_max, thruster_data(j).phi_max);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,108" id="srcline108">108</a></span><span class="line">            <span class="comment">%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,109" id="srcline109">109</a></span><span class="line">            <span class="comment">%             thruster_data(j).phi_ = max(thruster_data(j).phi - ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,110" id="srcline110">110</a></span><span class="line">            <span class="comment">%                 dt * thruster_data(j).dphi_max, thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,111" id="srcline111">111</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,112" id="srcline112">112</a></span><span class="line">            Nazi = Nazi + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,113" id="srcline113">113</a></span><span class="line">        case 2<span class="comment">%fpp</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,114" id="srcline114">114</a></span><span class="line">            thruster_data(j).Tplus = min((thruster_data(j).T + ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,115" id="srcline115">115</a></span><span class="line">                dt * thruster_data(j).dTmax) , ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,116" id="srcline116">116</a></span><span class="line">                thruster_data(j).Tmax) * polyval(Rangle_T,abs(thruster_data(j).phi));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,117" id="srcline117">117</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,118" id="srcline118">118</a></span><span class="line">            thruster_data(j).T_ = max(thruster_data(j).T - ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,119" id="srcline119">119</a></span><span class="line">                dt * thruster_data(j).dTmax, thruster_data(j).Tmin) ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,120" id="srcline120">120</a></span><span class="line">                * polyval(Rangle_T,abs(thruster_data(j).phi));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,121" id="srcline121">121</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,122" id="srcline122">122</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,123" id="srcline123">123</a></span><span class="line">            [temp1,temp2]= ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,124" id="srcline124">124</a></span><span class="line">                angleMaxMin(thruster_data(j).phi_min, ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,125" id="srcline125">125</a></span><span class="line">                thruster_data(j).phi_max, ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,126" id="srcline126">126</a></span><span class="line">                thruster_data(j).phi, ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,127" id="srcline127">127</a></span><span class="line">                thruster_data(j).phi - dt * thruster_data(j).dphi_max, ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,128" id="srcline128">128</a></span><span class="line">                thruster_data(j).phi + dt * thruster_data(j).dphi_max);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,129" id="srcline129">129</a></span><span class="line">            thruster_data(j).phiPlus = sign(temp2) * polyval(Rangle_Fangle,abs(temp2));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,130" id="srcline130">130</a></span><span class="line">            thruster_data(j).phi_ = sign(temp1) * polyval(Rangle_Fangle,abs(temp1));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,131" id="srcline131">131</a></span><span class="line">            <span class="comment">%             temp = (min(thruster_data(j).phi + ...<span class="comment"> %force angle</span></span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,132" id="srcline132">132</a></span><span class="line">            <span class="comment">%                 dt * thruster_data(j).dphi_max, thruster_data(j).phi_max));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,133" id="srcline133">133</a></span><span class="line">            <span class="comment">%             thruster_data(j).phiPlus = sign(temp) * polyval(Rangle_Fangle,abs(temp));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,134" id="srcline134">134</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,135" id="srcline135">135</a></span><span class="line">            <span class="comment">%             temp = (max(thruster_data(j).phi - ...<span class="comment"> %force angle</span></span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,136" id="srcline136">136</a></span><span class="line">            <span class="comment">%                 dt * thruster_data(j).dphi_max, thruster_data(j).phi_min));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,137" id="srcline137">137</a></span><span class="line">            <span class="comment">%             thruster_data(j).phi_ = sign(temp) * polyval(Rangle_Fangle,abs(temp));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,138" id="srcline138">138</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,139" id="srcline139">139</a></span><span class="line">            Nfpp = Nfpp + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,140" id="srcline140">140</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,141" id="srcline141">141</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,142" id="srcline142">142</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,143" id="srcline143">143</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,144" id="srcline144">144</a></span><span class="line"><span class="comment">%!!!!!to be improved</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,145" id="srcline145">145</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,146" id="srcline146">146</a></span><span class="line"><span class="comment">%     for j=1:N_enabled_thruster%!!!!!the above Tplus is overwitten</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,147" id="srcline147">147</a></span><span class="line">        </span></span>
+<span class="srcline"><span class="lineno"><a href="86,148" id="srcline148">148</a></span><span class="line"><span class="comment">%         thruster_data(j).Tplus = thruster_data(j).Tmax;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,149" id="srcline149">149</a></span><span class="line"><span class="comment">%         thruster_data(j).T_ = thruster_data(j).Tmin;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,150" id="srcline150">150</a></span><span class="line"><span class="comment">%         thruster_data(j).phi_ = thruster_data(j).phi_min;%not correct. if phi_max - phi_min &gt;pi, constraint falls</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,151" id="srcline151">151</a></span><span class="line"><span class="comment">%         thruster_data(j).phiPlus = thruster_data(j).phi_max;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,152" id="srcline152">152</a></span><span class="line">        </span></span>
+<span class="srcline"><span class="lineno"><a href="86,153" id="srcline153">153</a></span><span class="line"><span class="comment">%     end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,154" id="srcline154">154</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,155" id="srcline155">155</a></span><span class="line"><span class="comment">% chck_sol = [[thruster_data(:).phi_min]' [thruster_data(:).phi_]' [thruster_data.phi]' [thruster_data.phiPlus]' [thruster_data(:).phi_max]'];</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,156" id="srcline156">156</a></span><span class="line"><span class="comment">% check_angle(chck_sol(:,1),chck_sol(:,2),chck_sol(:,3),chck_sol(:,4),chck_sol(:,5))</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,157" id="srcline157">157</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,158" id="srcline158">158</a></span><span class="line">Nvar = 2 * Ntunnel + 2 * Nazi + 2 * Nfpp + 3;<span class="comment">%number of variables in quad</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,159" id="srcline159">159</a></span><span class="line"><span class="comment">% if no_azi_angle_constr == 0 % there is angle constraint</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,160" id="srcline160">160</a></span><span class="line"><span class="comment">%     N_A = Ntunnel * 2 + Nazi * (5 + NA_azi) + Nfpp * (5 + NA_fpp);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,161" id="srcline161">161</a></span><span class="line"><span class="comment">% else</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,162" id="srcline162">162</a></span><span class="line"><span class="comment">%     N_A = Ntunnel * 2 + Nazi *  NA_azi + Nfpp * (5 + NA_fpp);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,163" id="srcline163">163</a></span><span class="line"><span class="comment">% end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,164" id="srcline164">164</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,165" id="srcline165">165</a></span><span class="line">N_A = 0;<span class="comment">%added v1.08</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,166" id="srcline166">166</a></span><span class="line">for j=1:N_enabled_thruster <span class="comment">%added v1.08</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,167" id="srcline167">167</a></span><span class="line">    switch thruster_data(j).type</span></span>
+<span class="srcline"><span class="lineno"><a href="86,168" id="srcline168">168</a></span><span class="line">        case 4</span></span>
+<span class="srcline"><span class="lineno"><a href="86,169" id="srcline169">169</a></span><span class="line">            N_A = N_A + 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,170" id="srcline170">170</a></span><span class="line">        case 3</span></span>
+<span class="srcline"><span class="lineno"><a href="86,171" id="srcline171">171</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,172" id="srcline172">172</a></span><span class="line">            if thruster_data(j).constr == 2 || thruster_data(j).constr == 3</span></span>
+<span class="srcline"><span class="lineno"><a href="86,173" id="srcline173">173</a></span><span class="line">                N_A = N_A + (5 + NA_azi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,174" id="srcline174">174</a></span><span class="line">            else </span></span>
+<span class="srcline"><span class="lineno"><a href="86,175" id="srcline175">175</a></span><span class="line">                N_A = N_A + NA_azi;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,176" id="srcline176">176</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,177" id="srcline177">177</a></span><span class="line">        case 2</span></span>
+<span class="srcline"><span class="lineno"><a href="86,178" id="srcline178">178</a></span><span class="line">            N_A = N_A + (5 + NA_fpp);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,179" id="srcline179">179</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,180" id="srcline180">180</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,181" id="srcline181">181</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,182" id="srcline182">182</a></span><span class="line"><span class="comment">%% ------------------------------------------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,183" id="srcline183">183</a></span><span class="line">persistent H f N_Aeq Aeq beq;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,184" id="srcline184">184</a></span><span class="line">if isempty(H)||isempty(f)||isempty(N_Aeq)||isempty(Aeq)||isempty(beq)||init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,185" id="srcline185">185</a></span><span class="line">    H = eye(Nvar);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,186" id="srcline186">186</a></span><span class="line">    f= zeros(Nvar,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,187" id="srcline187">187</a></span><span class="line">    N_Aeq = 3 + Ntunnel;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,188" id="srcline188">188</a></span><span class="line">    Aeq= zeros(N_Aeq,Nvar);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,189" id="srcline189">189</a></span><span class="line">    beq=zeros(N_Aeq,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,190" id="srcline190">190</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,191" id="srcline191">191</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,192" id="srcline192">192</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,193" id="srcline193">193</a></span><span class="line">    A=zeros(N_A,Nvar);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,194" id="srcline194">194</a></span><span class="line">    b= zeros(N_A,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,195" id="srcline195">195</a></span><span class="line">    beq(1) = T_r.Tx;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,196" id="srcline196">196</a></span><span class="line">    beq(2) = T_r.Ty;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,197" id="srcline197">197</a></span><span class="line">    beq(3) = T_r.Tm;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,198" id="srcline198">198</a></span><span class="line"><span class="comment">% ------------------------------------------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,199" id="srcline199">199</a></span><span class="line">i_H = 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,200" id="srcline200">200</a></span><span class="line">numOfTunnel=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,201" id="srcline201">201</a></span><span class="line">numOfAzi=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,202" id="srcline202">202</a></span><span class="line">numOfFpp=0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,203" id="srcline203">203</a></span><span class="line">pos_A = 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,204" id="srcline204">204</a></span><span class="line">pos_Aeq = 4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,205" id="srcline205">205</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,206" id="srcline206">206</a></span><span class="line">eff_all = ones(1,N_enabled_thruster);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,207" id="srcline207">207</a></span><span class="line">for j=1:N_enabled_thruster</span></span>
+<span class="srcline"><span class="lineno"><a href="86,208" id="srcline208">208</a></span><span class="line">    if thruster_data(j).type == 3</span></span>
+<span class="srcline"><span class="lineno"><a href="86,209" id="srcline209">209</a></span><span class="line">        eff_all(j) = azi_eff(Ce(j).value,thruster_data(j).phi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,210" id="srcline210">210</a></span><span class="line">    end    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,211" id="srcline211">211</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,212" id="srcline212">212</a></span><span class="line">[eff,pos_eff] = min(eff_all);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,213" id="srcline213">213</a></span><span class="line">eff_all = ones(1,N_enabled_thruster);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,214" id="srcline214">214</a></span><span class="line">eff_all(pos_eff) = eff;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,215" id="srcline215">215</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,216" id="srcline216">216</a></span><span class="line">for j=1:N_enabled_thruster</span></span>
+<span class="srcline"><span class="lineno"><a href="86,217" id="srcline217">217</a></span><span class="line">    switch thruster_data(j).type</span></span>
+<span class="srcline"><span class="lineno"><a href="86,218" id="srcline218">218</a></span><span class="line">        case 4  <span class="comment">%tunnel</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,219" id="srcline219">219</a></span><span class="line">            temp = numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,220" id="srcline220">220</a></span><span class="line">            if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,221" id="srcline221">221</a></span><span class="line">            H(i_H,i_H) = thruster_data(j).weight(1) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,222" id="srcline222">222</a></span><span class="line">            H(i_H + 1,i_H + 1) = thruster_data(j).weight(2) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,223" id="srcline223">223</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,224" id="srcline224">224</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,225" id="srcline225">225</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,226" id="srcline226">226</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,227" id="srcline227">227</a></span><span class="line">                Aeq(1:3,temp + 1:temp + 2)...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,228" id="srcline228">228</a></span><span class="line">                    = [1 0;0 1; - thruster_data(j).y + thruster_data(j).y0 thruster_data(j).x - thruster_data(j).x0] * thruster_data(j).Tmax^2;<span class="comment">%R1 R2 R3</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,229" id="srcline229">229</a></span><span class="line">                </span></span>
+<span class="srcline"><span class="lineno"><a href="86,230" id="srcline230">230</a></span><span class="line">                </span></span>
+<span class="srcline"><span class="lineno"><a href="86,231" id="srcline231">231</a></span><span class="line"><span class="comment">%             Aeq(pos_Aeq,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = sin(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,232" id="srcline232">232</a></span><span class="line"><span class="comment">%             Aeq(pos_Aeq,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2) = -cos(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,233" id="srcline233">233</a></span><span class="line">            Aeq(pos_Aeq,temp + 1:temp + 2) = [sin(thruster_data(j).phi_min) -cos(thruster_data(j).phi_min)] * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,234" id="srcline234">234</a></span><span class="line">                </span></span>
+<span class="srcline"><span class="lineno"><a href="86,235" id="srcline235">235</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,236" id="srcline236">236</a></span><span class="line">            beq(pos_Aeq) = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,237" id="srcline237">237</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,238" id="srcline238">238</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,239" id="srcline239">239</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,240" id="srcline240">240</a></span><span class="line">            <span class="comment">%             A(pos_A,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = -cos(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,241" id="srcline241">241</a></span><span class="line"><span class="comment">%             A(pos_A,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2) = -sin(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,242" id="srcline242">242</a></span><span class="line">            A(pos_A,temp + 1:temp + 2) = [-cos(thruster_data(j).phi_min) -sin(thruster_data(j).phi_min)]* thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,243" id="srcline243">243</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,244" id="srcline244">244</a></span><span class="line"><span class="comment">%             b(pos_A) = -thruster_data(j).Tplus;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,245" id="srcline245">245</a></span><span class="line"><span class="comment">%             A(pos_A + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = cos(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,246" id="srcline246">246</a></span><span class="line"><span class="comment">%             A(pos_A + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2) = sin(thruster_data(j).phi_min);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,247" id="srcline247">247</a></span><span class="line">            A(pos_A + 1,temp + 1:temp + 2) = [cos(thruster_data(j).phi_min) sin(thruster_data(j).phi_min)]* thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,248" id="srcline248">248</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,249" id="srcline249">249</a></span><span class="line"><span class="comment">%             b(pos_A + 1) = thruster_data(j).T_;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,250" id="srcline250">250</a></span><span class="line">            b(pos_A:pos_A + 1) = [-thruster_data(j).Tplus; thruster_data(j).T_];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,251" id="srcline251">251</a></span><span class="line">            <span class="comment">%             check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A:pos_A + 1, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,252" id="srcline252">252</a></span><span class="line">            <span class="comment">%                 numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,253" id="srcline253">253</a></span><span class="line">            <span class="comment">%                 b(pos_A:pos_A + 1));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,254" id="srcline254">254</a></span><span class="line">            i_H = i_H + 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,255" id="srcline255">255</a></span><span class="line">            pos_A = pos_A + 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,256" id="srcline256">256</a></span><span class="line">            pos_Aeq = pos_Aeq + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,257" id="srcline257">257</a></span><span class="line">            numOfTunnel = numOfTunnel + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,258" id="srcline258">258</a></span><span class="line">        case 3  <span class="comment">%azi</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,259" id="srcline259">259</a></span><span class="line">            if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,260" id="srcline260">260</a></span><span class="line">            H(i_H,i_H) = thruster_data(j).weight(1) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,261" id="srcline261">261</a></span><span class="line">            H(i_H + 1,i_H + 1) = thruster_data(j).weight(2) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,262" id="srcline262">262</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,263" id="srcline263">263</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,264" id="srcline264">264</a></span><span class="line">            temp = numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,265" id="srcline265">265</a></span><span class="line">            Aeq(1:3,temp + 1:temp + 2) = [eff_all(j) 0;0 eff_all(j); - thruster_data(j).y + thruster_data(j).y0 thruster_data(j).x - thruster_data(j).x0] * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,266" id="srcline266">266</a></span><span class="line">            if thruster_data(j).constr == 2 || thruster_data(j).constr == 3 <span class="comment">% there is constraint</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,267" id="srcline267">267</a></span><span class="line">                A(pos_A:pos_A + 4,temp + 1 : temp + 2) = [-sin(thruster_data(j).phi_) cos(thruster_data(j).phi_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,268" id="srcline268">268</a></span><span class="line">                    sin(thruster_data(j).phiPlus) -cos(thruster_data(j).phiPlus)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,269" id="srcline269">269</a></span><span class="line">                    cos(thruster_data(j).phi) sin(thruster_data(j).phi)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,270" id="srcline270">270</a></span><span class="line">                    -cos(thruster_data(j).phi_) -sin(thruster_data(j).phi_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,271" id="srcline271">271</a></span><span class="line">                    -cos(thruster_data(j).phiPlus) -sin(thruster_data(j).phiPlus)] * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,272" id="srcline272">272</a></span><span class="line">                b(pos_A : pos_A + 4) = [-c2 * abs(cos(thruster_data(j).phi_)) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,273" id="srcline273">273</a></span><span class="line">                    (thruster_data(j).Tplus - thruster_data(j).T_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,274" id="srcline274">274</a></span><span class="line">                    -c2 * abs(cos(thruster_data(j).phiPlus)) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,275" id="srcline275">275</a></span><span class="line">                    (thruster_data(j).Tplus - thruster_data(j).T_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,276" id="srcline276">276</a></span><span class="line">                    thruster_data(j).T_</span></span>
+<span class="srcline"><span class="lineno"><a href="86,277" id="srcline277">277</a></span><span class="line">                    -cos(thruster_data(j).phi_ - thruster_data(j).phi) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,278" id="srcline278">278</a></span><span class="line">                    thruster_data(j).Tplus</span></span>
+<span class="srcline"><span class="lineno"><a href="86,279" id="srcline279">279</a></span><span class="line">                    -cos(thruster_data(j).phiPlus - thruster_data(j).phi) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,280" id="srcline280">280</a></span><span class="line">                    thruster_data(j).Tplus];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,281" id="srcline281">281</a></span><span class="line"><span class="comment">%                 if init == true</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,282" id="srcline282">282</a></span><span class="line">                    A(pos_A + 4 + 1:pos_A + 4 + NA_azi,temp + 1:temp + 2) = A_azi * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,283" id="srcline283">283</a></span><span class="line">                    b(pos_A + 4 + 1:pos_A + 4 + NA_azi) = - thruster_data(j).Tmax * cos(pi / NA_azi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,284" id="srcline284">284</a></span><span class="line"><span class="comment">%                 end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,285" id="srcline285">285</a></span><span class="line">            else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,286" id="srcline286">286</a></span><span class="line"><span class="comment">%                 if init == true</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,287" id="srcline287">287</a></span><span class="line">                    A(pos_A - 1 + 1 : pos_A - 1 + NA_azi,temp + 1:temp + 2) = A_azi * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,288" id="srcline288">288</a></span><span class="line">                    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,289" id="srcline289">289</a></span><span class="line">                    b(pos_A - 1 + 1 : pos_A - 1 + NA_azi) = - thruster_data(j).Tmax * cos(pi / NA_azi);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,290" id="srcline290">290</a></span><span class="line"><span class="comment">%                 end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,291" id="srcline291">291</a></span><span class="line">            end    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,292" id="srcline292">292</a></span><span class="line">                </span></span>
+<span class="srcline"><span class="lineno"><a href="86,293" id="srcline293">293</a></span><span class="line">            <span class="comment">%             check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A:pos_A + 4, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,294" id="srcline294">294</a></span><span class="line">            <span class="comment">%                 numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,295" id="srcline295">295</a></span><span class="line">            <span class="comment">%                 b(pos_A:pos_A + 4));%azi</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,296" id="srcline296">296</a></span><span class="line">            <span class="comment">%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,297" id="srcline297">297</a></span><span class="line">            <span class="comment">%                     check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A + 4 + 1:pos_A + 4 + i_Azi, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,298" id="srcline298">298</a></span><span class="line">            <span class="comment">%                         numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,299" id="srcline299">299</a></span><span class="line">            <span class="comment">%                         b(pos_A + 4 + 1:pos_A + 4 + i_Azi));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,300" id="srcline300">300</a></span><span class="line">            <span class="comment">%         check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A:pos_A + 4 + i_Azi, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,301" id="srcline301">301</a></span><span class="line">            <span class="comment">%             numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,302" id="srcline302">302</a></span><span class="line">            <span class="comment">%             b(pos_A:pos_A + 4 + i_Azi));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,303" id="srcline303">303</a></span><span class="line">            if thruster_data(j).constr == 2 || thruster_data(j).constr == 3 <span class="comment">% there is constraint </span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,304" id="srcline304">304</a></span><span class="line">                pos_A = pos_A + 5 + NA_azi;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,305" id="srcline305">305</a></span><span class="line">            else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,306" id="srcline306">306</a></span><span class="line">                pos_A = pos_A + NA_azi;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,307" id="srcline307">307</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,308" id="srcline308">308</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,309" id="srcline309">309</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,310" id="srcline310">310</a></span><span class="line">            i_H = i_H + 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,311" id="srcline311">311</a></span><span class="line">            numOfAzi = numOfAzi + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,312" id="srcline312">312</a></span><span class="line">        case 2 <span class="comment">%fpp</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,313" id="srcline313">313</a></span><span class="line">            [A_fpp,b_fpp,~] = N_sided_rudder(thruster_data(j).Tmax * rudder_table(:,2:3));<span class="comment">%x,y</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,314" id="srcline314">314</a></span><span class="line">            if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,315" id="srcline315">315</a></span><span class="line">            H(i_H,i_H) = thruster_data(j).weight(1) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,316" id="srcline316">316</a></span><span class="line">            H(i_H + 1,i_H + 1) = thruster_data(j).weight(2) * thruster_data(j).Tmax^4;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,317" id="srcline317">317</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,318" id="srcline318">318</a></span><span class="line">            temp = numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,319" id="srcline319">319</a></span><span class="line">            if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,320" id="srcline320">320</a></span><span class="line">            Aeq(1:3,temp + 1:temp + 2) = [1 0;0 1; - thruster_data(j).y + thruster_data(j).y0 thruster_data(j).x - thruster_data(j).x0] * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,321" id="srcline321">321</a></span><span class="line">            end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,322" id="srcline322">322</a></span><span class="line">            A(pos_A:pos_A + 4,temp + 1 : temp + 2) = [-sin(thruster_data(j).phi_) cos(thruster_data(j).phi_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,323" id="srcline323">323</a></span><span class="line">                    sin(thruster_data(j).phiPlus) -cos(thruster_data(j).phiPlus)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,324" id="srcline324">324</a></span><span class="line">                    cos(thruster_data(j).phi) sin(thruster_data(j).phi)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,325" id="srcline325">325</a></span><span class="line">                    -cos(thruster_data(j).phi_) -sin(thruster_data(j).phi_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,326" id="srcline326">326</a></span><span class="line">                    -cos(thruster_data(j).phiPlus) -sin(thruster_data(j).phiPlus)] * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,327" id="srcline327">327</a></span><span class="line">                b(pos_A : pos_A + 4) = [-c2 * abs(cos(thruster_data(j).phi_)) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,328" id="srcline328">328</a></span><span class="line">                    (thruster_data(j).Tplus - thruster_data(j).T_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,329" id="srcline329">329</a></span><span class="line">                    -c2 * abs(cos(thruster_data(j).phiPlus)) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,330" id="srcline330">330</a></span><span class="line">                    (thruster_data(j).Tplus - thruster_data(j).T_)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,331" id="srcline331">331</a></span><span class="line">                    thruster_data(j).T_</span></span>
+<span class="srcline"><span class="lineno"><a href="86,332" id="srcline332">332</a></span><span class="line">                    -cos(thruster_data(j).phi_ - thruster_data(j).phi) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,333" id="srcline333">333</a></span><span class="line">                    thruster_data(j).Tplus</span></span>
+<span class="srcline"><span class="lineno"><a href="86,334" id="srcline334">334</a></span><span class="line">                    -cos(thruster_data(j).phiPlus - thruster_data(j).phi) * ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,335" id="srcline335">335</a></span><span class="line">                    thruster_data(j).Tplus];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,336" id="srcline336">336</a></span><span class="line">                if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,337" id="srcline337">337</a></span><span class="line">                 A(pos_A + 4 + 1:pos_A + 4 + NA_fpp,temp + 1:temp + 2) = A_fpp * thruster_data(j).Tmax^2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,338" id="srcline338">338</a></span><span class="line">                    b(pos_A + 4 + 1:pos_A + 4 + NA_fpp) = b_fpp;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,339" id="srcline339">339</a></span><span class="line">                end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,340" id="srcline340">340</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,341" id="srcline341">341</a></span><span class="line">            <span class="comment">%         check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A:pos_A + 4, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,342" id="srcline342">342</a></span><span class="line">            <span class="comment">%             numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,343" id="srcline343">343</a></span><span class="line">            <span class="comment">%             b(pos_A:pos_A + 4));%fpp</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,344" id="srcline344">344</a></span><span class="line">            <span class="comment">%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,345" id="srcline345">345</a></span><span class="line">            <span class="comment">%         check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A + 4 + 1:pos_A + 4 + i_Fpp, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,346" id="srcline346">346</a></span><span class="line">            <span class="comment">%             numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,347" id="srcline347">347</a></span><span class="line">            <span class="comment">%             b(pos_A + 4 + 1:pos_A + 4 + i_Fpp));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,348" id="srcline348">348</a></span><span class="line">            <span class="comment">%             check_rudder_constr(thruster_data(j).Tmax*[-1 -1;-1 1;1 1;1 -1],A(pos_A:pos_A + 4 + i_Fpp, ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,349" id="srcline349">349</a></span><span class="line">            <span class="comment">%                 numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1:numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 2), ...</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,350" id="srcline350">350</a></span><span class="line">            <span class="comment">%                 b(pos_A:pos_A + 4 + i_Fpp));</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,351" id="srcline351">351</a></span><span class="line">            i_H = i_H + 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,352" id="srcline352">352</a></span><span class="line">            pos_A = pos_A + 5 + NA_fpp;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,353" id="srcline353">353</a></span><span class="line">            </span></span>
+<span class="srcline"><span class="lineno"><a href="86,354" id="srcline354">354</a></span><span class="line">            numOfFpp = numOfFpp + 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,355" id="srcline355">355</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,356" id="srcline356">356</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,357" id="srcline357">357</a></span><span class="line"><span class="comment">%!!-----------------add bound for s1 s2 s3---does not help------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,358" id="srcline358">358</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = 1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,359" id="srcline359">359</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = 1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,360" id="srcline360">360</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = 1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,361" id="srcline361">361</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = -1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,362" id="srcline362">362</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = -1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,363" id="srcline363">363</a></span><span class="line"><span class="comment">% A(end + 1,numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2 + 1) = -1;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,364" id="srcline364">364</a></span><span class="line"><span class="comment">% b(end + 1) = -1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,365" id="srcline365">365</a></span><span class="line"><span class="comment">% b(end + 1) = -1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,366" id="srcline366">366</a></span><span class="line"><span class="comment">% b(end + 1) = -1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,367" id="srcline367">367</a></span><span class="line"><span class="comment">% b(end + 1) = 1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,368" id="srcline368">368</a></span><span class="line"><span class="comment">% b(end + 1) = 1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,369" id="srcline369">369</a></span><span class="line"><span class="comment">% b(end + 1) = 1000000;</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,370" id="srcline370">370</a></span><span class="line"><span class="comment">%-------------------------------------------------</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,371" id="srcline371">371</a></span><span class="line">if init == true</span></span>
+<span class="srcline"><span class="lineno"><a href="86,372" id="srcline372">372</a></span><span class="line">temp = numOfAzi * 2 + numOfTunnel * 2 + numOfFpp * 2;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,373" id="srcline373">373</a></span><span class="line">    Aeq(1,temp + 1) = -1;<span class="comment">%s1</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,374" id="srcline374">374</a></span><span class="line">    Aeq(2,temp + 2) = -1;<span class="comment">%s2</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,375" id="srcline375">375</a></span><span class="line">    Aeq(3,temp + 3) = -1;<span class="comment">%s3</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,376" id="srcline376">376</a></span><span class="line">for i = 1:3</span></span>
+<span class="srcline"><span class="lineno"><a href="86,377" id="srcline377">377</a></span><span class="line">    H(i_H + i - 1,i_H + i - 1) = thruster_data(1).weight_s(i);<span class="comment">%!!!thruster_data(1) must be available</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,378" id="srcline378">378</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,379" id="srcline379">379</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,380" id="srcline380">380</a></span><span class="line">Ho = H;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,381" id="srcline381">381</a></span><span class="line">fo = f;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,382" id="srcline382">382</a></span><span class="line">Ao = A;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,383" id="srcline383">383</a></span><span class="line">bo = b;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,384" id="srcline384">384</a></span><span class="line">Aeqo = Aeq;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,385" id="srcline385">385</a></span><span class="line">beqo = beq;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,386" id="srcline386">386</a></span><span class="line">end</span></span>
+</pre>
+</div>
+<pre class="code">
+<span class="srcline"><span class="lineno"><a href="86,387" id="srcline387">387</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,388" id="srcline388">388</a></span><span class="line"><span class="keyword">function</span> [<span class="var type1" id="S72T99U2250">A</span>,<span class="var type1" id="S73T3U2251">N</span>] = N_sided_linear(<span class="var type2" id="S74T3V2U2254">error</span>)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,389" id="srcline389">389</a></span><span class="line"><span class="comment">%%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,390" id="srcline390">390</a></span><span class="line"><span class="mxinfo " id="T3:U4"><span class="var type1" id="S73T3U2257">N</span> = <span class="mxinfo " id="T3:U6">floor(pi / (acos(1 - <span class="var type1" id="S74T3U2269">error</span>))) + 1</span></span>;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,391" id="srcline391">391</a></span><span class="line"><span class="comment">%     r = - R * cos(pi / N);%change &lt;= to &gt;=</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,392" id="srcline392">392</a></span><span class="line"><span class="mxinfo " id="T109:U8"><span class="var type1" id="S78T109U2273">phi</span> = <span class="mxinfo " id="T109:U10">zeros(<span class="var type1" id="S73T3U2276">N</span>,1)</span></span>;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,393" id="srcline393">393</a></span><span class="line"><span class="mxinfo " id="T99:U12"><span class="var type1" id="S72T99U2280">A</span> = <span class="mxinfo " id="T99:U14">zeros(<span class="var type1" id="S73T3U2283">N</span>,<span class="mxinfo " id="T3:U16">2</span>)</span></span>;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,394" id="srcline394">394</a></span><span class="line"><span class="keyword">for</span> <span class="var type1" id="S80T3U2287">i</span> = <span class="mxinfo " id="T109:U18"><span class="mxinfo " id="T3:U19">0</span> : (<span class="var type1" id="S73T3U2292">N</span> - 1)</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,395" id="srcline395">395</a></span><span class="line">    <span class="mxinfo " id="T3:U21"><span class="mxinfo " id="T3:U22"><span class="var type1" id="S78T109U2297">phi</span>(<span class="mxinfo " id="T3:U24"><span class="var type1" id="S80T3U2299">i</span> + <span class="mxinfo " id="T3:U26">1</span></span>)</span> = <span class="mxinfo " id="T3:U27"><span class="mxinfo " id="T3:U28">(<span class="mxinfo " id="T3:U29"><span class="mxinfo " id="T3:U30"><span class="mxinfo " id="T3:U31">2</span> * <span class="var type1" id="S80T3U2307">i</span></span> + <span class="mxinfo " id="T3:U33">1</span></span>) * <span class="mxinfo " id="T3:U34">pi</span></span> / <span class="var type1" id="S73T3U2311">N</span></span></span>;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,396" id="srcline396">396</a></span><span class="line">    <span class="mxinfo " id="T3:U36"><span class="mxinfo " id="T3:U37"><span class="var type1" id="S72T99U2315">A</span>(<span class="mxinfo " id="T3:U39"><span class="var type1" id="S80T3U2317">i</span> + <span class="mxinfo " id="T3:U41">1</span></span>,<span class="mxinfo " id="T3:U42">1</span>)</span> = <span class="mxinfo " id="T3:U43">- <span class="mxinfo " id="T3:U44">cos(<span class="mxinfo " id="T3:U45"><span class="var type1" id="S78T109U2324">phi</span>(<span class="mxinfo " id="T3:U47"><span class="var type1" id="S80T3U2326">i</span> + <span class="mxinfo " id="T3:U49">1</span></span>)</span>)</span></span></span>;<span class="comment">%change &lt;= to &gt;=</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,397" id="srcline397">397</a></span><span class="line">    <span class="mxinfo " id="T3:U50"><span class="mxinfo " id="T3:U51"><span class="var type1" id="S72T99U2331">A</span>(<span class="mxinfo " id="T3:U53"><span class="var type1" id="S80T3U2333">i</span> + <span class="mxinfo " id="T3:U55">1</span></span>,<span class="mxinfo " id="T3:U56">2</span>)</span> = <span class="mxinfo " id="T3:U57">- <span class="mxinfo " id="T3:U58">sin(<span class="mxinfo " id="T3:U59"><span class="var type1" id="S78T109U2340">phi</span>(<span class="mxinfo " id="T3:U61"><span class="var type1" id="S80T3U2342">i</span> + <span class="mxinfo " id="T3:U63">1</span></span>)</span>)</span></span></span>;<span class="comment">%change &lt;= to &gt;=</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,398" id="srcline398">398</a></span><span class="line"><span class="keyword">end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,399" id="srcline399">399</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,400" id="srcline400">400</a></span><span class="line"><span class="keyword">end</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,401" id="srcline401">401</a></span><span class="line"></span></span>
+</pre>
+<div class="dead">
+<pre class="code">
+<span class="srcline"><span class="lineno"><a href="86,402" id="srcline402">402</a></span><span class="line">function [A,b,N] = N_sided_rudder(points)<span class="comment">%x,y</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,403" id="srcline403">403</a></span><span class="line"><span class="comment">%%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,404" id="srcline404">404</a></span><span class="line"><span class="comment">% points =[0.980,0;0.965,0.0800;0.956,0.163;0.920,0.200;0.895,0.287;0.840,0.300</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,405" id="srcline405">405</a></span><span class="line"><span class="comment">%     0.811,0.341;0.770,0.345;0.743,0.347;0.720,0.300];</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,406" id="srcline406">406</a></span><span class="line">temp = flipud(points(2:end,:));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,407" id="srcline407">407</a></span><span class="line">temp(:,2) = -temp(:,2);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,408" id="srcline408">408</a></span><span class="line">points = [0 0;temp;points;0 0];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,409" id="srcline409">409</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,410" id="srcline410">410</a></span><span class="line">N = size(points,1) - 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,411" id="srcline411">411</a></span><span class="line">b = zeros(N,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,412" id="srcline412">412</a></span><span class="line">A = zeros(N,2);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,413" id="srcline413">413</a></span><span class="line"><span class="comment">%     points(end + 1,:) = points(1,:);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,414" id="srcline414">414</a></span><span class="line">for i = 1 : N</span></span>
+<span class="srcline"><span class="lineno"><a href="86,415" id="srcline415">415</a></span><span class="line">    A(i,1) = -points(i + 1,2) + points(i,2);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,416" id="srcline416">416</a></span><span class="line">    A(i,2) = -points(i,1) + points(i + 1,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,417" id="srcline417">417</a></span><span class="line">    b(i) = -points(i,1) * points(i + 1,2) + points(i + 1,1) * points(i,2);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,418" id="srcline418">418</a></span><span class="line">    </span></span>
+<span class="srcline"><span class="lineno"><a href="86,419" id="srcline419">419</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,420" id="srcline420">420</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,421" id="srcline421">421</a></span><span class="line"><span class="comment">% check_rudder_constr(points,A,b);</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,422" id="srcline422">422</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,423" id="srcline423">423</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,424" id="srcline424">424</a></span><span class="line">function check = check_rudder_constr(points,A,b)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,425" id="srcline425">425</a></span><span class="line"><span class="comment">%%</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,426" id="srcline426">426</a></span><span class="line">check = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,427" id="srcline427">427</a></span><span class="line">[max_dat]=max(points,[],1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,428" id="srcline428">428</a></span><span class="line">[min_dat]=min(points,[],1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,429" id="srcline429">429</a></span><span class="line">interv = (max_dat - min_dat)/30;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,430" id="srcline430">430</a></span><span class="line">[x, y]=meshgrid(min_dat(1):interv:max_dat(1),min_dat(2):interv:max_dat(2));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,431" id="srcline431">431</a></span><span class="line">M=size(x,1);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,432" id="srcline432">432</a></span><span class="line">NN=size(x,2);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,433" id="srcline433">433</a></span><span class="line">dat_sav = [];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,434" id="srcline434">434</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,435" id="srcline435">435</a></span><span class="line">plot(points(:,2),points(:,1));</span></span>
+<span class="srcline"><span class="lineno"><a href="86,436" id="srcline436">436</a></span><span class="line">axis equal</span></span>
+<span class="srcline"><span class="lineno"><a href="86,437" id="srcline437">437</a></span><span class="line">hold on</span></span>
+<span class="srcline"><span class="lineno"><a href="86,438" id="srcline438">438</a></span><span class="line">for i = 1:M</span></span>
+<span class="srcline"><span class="lineno"><a href="86,439" id="srcline439">439</a></span><span class="line">    for j=1:NN</span></span>
+<span class="srcline"><span class="lineno"><a href="86,440" id="srcline440">440</a></span><span class="line">        if A * [x(i,j) y(i,j)]' &gt;= b</span></span>
+<span class="srcline"><span class="lineno"><a href="86,441" id="srcline441">441</a></span><span class="line">            dat_sav(end+1,:) = [x(i,j) y(i,j)];</span></span>
+<span class="srcline"><span class="lineno"><a href="86,442" id="srcline442">442</a></span><span class="line">            plot(y(i,j),x(i,j),'*');</span></span>
+<span class="srcline"><span class="lineno"><a href="86,443" id="srcline443">443</a></span><span class="line">            check = 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,444" id="srcline444">444</a></span><span class="line">        end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,445" id="srcline445">445</a></span><span class="line">    end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,446" id="srcline446">446</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,447" id="srcline447">447</a></span><span class="line">hold off</span></span>
+<span class="srcline"><span class="lineno"><a href="86,448" id="srcline448">448</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,449" id="srcline449">449</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,450" id="srcline450">450</a></span><span class="line">function y = check_angle(phi_min,phi_,phi,phiPlus,phi_max)</span></span>
+<span class="srcline"><span class="lineno"><a href="86,451" id="srcline451">451</a></span><span class="line">tol = 1e-8;<span class="comment">%!!!avoid numerical problem</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,452" id="srcline452">452</a></span><span class="line">if abs(phi_min - phi_max) &lt; tol<span class="comment">%phi_min == phi_max means no forbidden zone</span></span></span>
+<span class="srcline"><span class="lineno"><a href="86,453" id="srcline453">453</a></span><span class="line">    k = true;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,454" id="srcline454">454</a></span><span class="line">else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,455" id="srcline455">455</a></span><span class="line">k = (angle_dist(phi_min,phi_)&lt;=angle_dist(phi_min,phi) + tol) ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,456" id="srcline456">456</a></span><span class="line">    &amp;(angle_dist(phi_min,phi)&lt;=angle_dist(phi_min,phiPlus) + tol) ...</span></span>
+<span class="srcline"><span class="lineno"><a href="86,457" id="srcline457">457</a></span><span class="line">    &amp; (angle_dist(phi,phiPlus)&lt;=angle_dist(phi,phi_max) + tol);</span></span>
+<span class="srcline"><span class="lineno"><a href="86,458" id="srcline458">458</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,459" id="srcline459">459</a></span><span class="line">if prod(k) == 0</span></span>
+<span class="srcline"><span class="lineno"><a href="86,460" id="srcline460">460</a></span><span class="line">    y = 0;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,461" id="srcline461">461</a></span><span class="line">else</span></span>
+<span class="srcline"><span class="lineno"><a href="86,462" id="srcline462">462</a></span><span class="line">    y = 1;</span></span>
+<span class="srcline"><span class="lineno"><a href="86,463" id="srcline463">463</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,464" id="srcline464">464</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,465" id="srcline465">465</a></span><span class="line">end</span></span>
+<span class="srcline"><span class="lineno"><a href="86,466" id="srcline466">466</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,467" id="srcline467">467</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,468" id="srcline468">468</a></span><span class="line"></span></span>
+<span class="srcline"><span class="lineno"><a href="86,469" id="srcline469">469</a></span><span class="line"> </span></span>
+</pre>
+</div>
